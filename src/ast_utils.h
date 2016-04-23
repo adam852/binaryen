@@ -111,7 +111,8 @@ struct EffectAnalyzer : public PostWalker<EffectAnalyzer, Visitor<EffectAnalyzer
 struct ExpressionManipulator {
   // Nop is the smallest node, so we can always nop-ify another node in our arena
   static void nop(Expression* target) {
-    *static_cast<Nop*>(target) = Nop();
+    target->_id = Expression::NopId;
+    assert(target->is<Nop>());
   }
 };
 

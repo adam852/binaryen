@@ -155,7 +155,7 @@ void Linker::layout() {
   // ensure an explicit function type for indirect call targets
   for (auto& name : wasm.table.names) {
     auto* func = wasm.getFunction(name);
-    func->type = ensureFunctionType(getSig(func), &wasm, wasm.allocator)->name;
+    func->type = ensureFunctionType(getSig(func), &wasm)->name;
   }
 }
 
@@ -200,7 +200,7 @@ void Linker::emscriptenGlue(std::ostream& o) {
           auto import = parent->wasm.allocator.alloc<Import>();
           import->name = import->base = curr->target;
           import->module = ENV;
-          import->type = ensureFunctionType(getSig(curr), &parent->wasm, parent->wasm.allocator);
+          import->type = ensureFunctionType(getSig(curr), &parent->wasm);
           parent->wasm.addImport(import);
         }
       }
@@ -264,7 +264,7 @@ void Linker::makeDynCallThunks() {
   wasm::Builder wasmBuilder(wasm);
   for (const auto& indirectFunc : wasm.table.names) {
     std::string sig(getSig(wasm.getFunction(indirectFunc)));
-    auto* funcType = ensureFunctionType(sig, &wasm, wasm.allocator);
+    auto* funcType = ensureFunctionType(sig, &wasm);
     if (!sigs.insert(sig).second) continue; // Sig is already in the set
     std::vector<NameType> params;
     params.emplace_back("fptr", i32); // function pointer param

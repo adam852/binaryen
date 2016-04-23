@@ -690,43 +690,48 @@ class S2WasmBuilder {
         auto input = inputs.begin();
         auto* target = *input;
         std::vector<Expression*> operands(++input, inputs.end());
-        auto* funcType = ensureFunctionType(getSig(type, operands), &wasm, allocator);
+        auto* funcType = ensureFunctionType(getSig(type, operands), &wasm);
         assert(type == funcType->result);
         auto* indirect = builder.makeCallIndirect(funcType, target, std::move(operands));
         setOutput(indirect, assign);
 
       } else {
         // non-indirect call
-        CallBase* curr;
+        Expression* curr;
+        ExpressionList* operands;
         Name assign = getAssign();
         Name target = linker.resolveAlias(cleanFunction(getCommaSeparated()));
         if (linker.isFunctionImplemented(target)) {
           auto specific = allocator.alloc<Call>();
           specific->target = target;
+          specific->type = type;
+          operands = &specific->operands;
           curr = specific;
         } else {
           auto specific = allocator.alloc<CallImport>();
           specific->target = target;
+          specific->type = type;
+          operands = &specific->operands;
           curr = specific;
         }
-        curr->type = type;
         skipWhitespace();
         if (*s == ',') {
           skipComma();
           int num = getNumInputs();
           auto inputs = getInputs(num);
           for (int i = 0; i < num; i++) {
-            curr->operands.push_back(inputs[i]);
+            operands->push_back(inputs[i]);
           }
         }
         setOutput(curr, assign);
         if (curr->is<CallImport>()) {
-          auto target = curr->cast<CallImport>()->target;
+          auto* callImport = curr->cast<CallImport>();
+          auto target = callImport->target;
           if (!wasm.checkImport(target)) {
             auto import = allocator.alloc<Import>();
             import->name = import->base = target;
             import->module = ENV;
-            import->type = ensureFunctionType(getSig(curr), &wasm, allocator);
+            import->type = ensureFunctionType(getSig(callImport), &wasm);
             wasm.addImport(import);
           }
         }

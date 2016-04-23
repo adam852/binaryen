@@ -757,22 +757,21 @@ public:
 
   WasmType type; // the type of the expression: its *output*, not necessarily its input(s)
 
-  Expression() : _id(InvalidId), type(none) {}
   Expression(Id id) : _id(id), type(none) {}
-
+ 
   template<class T>
   bool is() {
-    return _id == T()._id;
+    return int(_id) == int(T::SpecificId);
   }
 
   template<class T>
   T* dynCast() {
-    return _id == T()._id ? (T*)this : nullptr;
+    return int(_id) == int(T::SpecificId) ? (T*)this : nullptr;
   }
 
   template<class T>
   T* cast() {
-    assert(_id == T()._id);
+    assert(int(_id) == int(T::SpecificId));
     return (T*)this;
   }
 };
@@ -804,18 +803,26 @@ inline const char *getExpressionName(Expression *curr) {
   }
 }
 
-typedef std::vector<Expression*> ExpressionList; // TODO: optimize?
+typedef ArenaVector<Expression*> ExpressionList;
 
-class Nop : public Expression {
+template<Expression::Id SID>
+class SpecificExpression : public Expression {
 public:
-  Nop() : Expression(NopId) {}
+  enum {
+    SpecificId = SID // compile-time access to the type for the class
+  };
+
+  SpecificExpression() : Expression(SID) {}
 };
 
-class Block : public Expression {
+class Nop : public SpecificExpression<Expression::NopId> {
 public:
-  Block() : Expression(BlockId) {
-    type = none; // blocks by default do not return, but if their last statement does, they might
-  }
+  Nop(MixedArena& allocator) {}
+};
+
+class Block : public SpecificExpression<Expression::BlockId> {
+public:
+  Block(MixedArena& allocator) : list(allocator) {}
 
   Name name;
   ExpressionList list;
@@ -827,11 +834,9 @@ public:
   }
 };
 
-class If : public Expression {
+class If : public SpecificExpression<Expression::IfId> {
 public:
-  If() : Expression(IfId), ifFalse(nullptr) {
-    type = none; // by default none; if-else can have one, though
-  }
+  If(MixedArena& allocator) : ifFalse(nullptr) {}
 
   Expression *condition, *ifTrue, *ifFalse;
 
@@ -842,9 +847,9 @@ public:
   }
 };
 
-class Loop : public Expression {
+class Loop : public SpecificExpression<Expression::LoopId> {
 public:
-  Loop() : Expression(LoopId) {}
+  Loop(MixedArena& allocator) {}
 
   Name out, in;
   Expression *body;
@@ -854,9 +859,9 @@ public:
   }
 };
 
-class Break : public Expression {
+class Break : public SpecificExpression<Expression::BreakId> {
 public:
-  Break() : Expression(BreakId), value(nullptr), condition(nullptr) {
+  Break(MixedArena& allocator) : value(nullptr), condition(nullptr) {
     type = unreachable;
   }
 
@@ -865,9 +870,9 @@ public:
   Expression *condition;
 };
 
-class Switch : public Expression {
+class Switch : public SpecificExpression<Expression::SwitchId> {
 public:
-  Switch() : Expression(SwitchId), condition(nullptr), value(nullptr) {
+  Switch(MixedArena& allocator) : condition(nullptr), value(nullptr) {
     type = unreachable;
   }
 
@@ -877,34 +882,29 @@ public:
   Expression *value;
 };
 
-class CallBase : public Expression {
+class Call : public SpecificExpression<Expression::CallId> {
 public:
-  CallBase(Id which) : Expression(which) {}
+  Call(MixedArena& allocator) : operands(allocator) {}
 
   ExpressionList operands;
-};
-
-class Call : public CallBase {
-public:
-  Call() : CallBase(CallId) {}
-
   Name target;
 };
 
-class CallImport : public Call {
+class CallImport : public SpecificExpression<Expression::CallImportId> {
 public:
-  CallImport() {
-    _id = CallImportId;
-  }
+  CallImport(MixedArena& allocator) : operands(allocator) {}
+
+  ExpressionList operands;
+  Name target;
 };
 
 class FunctionType {
 public:
   Name name;
   WasmType result;
-  std::vector<WasmType> params;
+  ArenaVector<WasmType> params;
 
-  FunctionType() : result(none) {}
+  FunctionType(MixedArena& allocator) : result(none), params(allocator) {}
 
   bool operator==(FunctionType& b) {
     if (name != b.name) return false; // XXX
@@ -920,32 +920,33 @@ public:
   }
 };
 
-class CallIndirect : public CallBase {
+class CallIndirect : public SpecificExpression<Expression::CallIndirectId> {
 public:
-  CallIndirect() : CallBase(CallIndirectId) {}
+  CallIndirect(MixedArena& allocator) : operands(allocator) {}
 
+  ExpressionList operands;
   FunctionType *fullType;
   Expression *target;
 };
 
-class GetLocal : public Expression {
+class GetLocal : public SpecificExpression<Expression::GetLocalId> {
 public:
-  GetLocal() : Expression(GetLocalId) {}
+  GetLocal(MixedArena& allocator) {}
 
   Index index;
 };
 
-class SetLocal : public Expression {
+class SetLocal : public SpecificExpression<Expression::SetLocalId> {
 public:
-  SetLocal() : Expression(SetLocalId) {}
+  SetLocal(MixedArena& allocator) {}
 
   Index index;
   Expression *value;
 };
 
-class Load : public Expression {
+class Load : public SpecificExpression<Expression::LoadId> {
 public:
-  Load() : Expression(LoadId) {}
+  Load(MixedArena& allocator) {}
 
   uint32_t bytes;
   bool signed_;
@@ -954,9 +955,9 @@ public:
   Expression *ptr;
 };
 
-class Store : public Expression {
+class Store : public SpecificExpression<Expression::StoreId> {
 public:
-  Store() : Expression(StoreId) {}
+  Store(MixedArena& allocator) {}
 
   unsigned bytes;
   uint32_t offset;
@@ -964,9 +965,9 @@ public:
   Expression *ptr, *value;
 };
 
-class Const : public Expression {
+class Const : public SpecificExpression<Expression::ConstId> {
 public:
-  Const() : Expression(ConstId) {}
+  Const(MixedArena& allocator) {}
 
   Literal value;
 
@@ -977,9 +978,9 @@ public:
   }
 };
 
-class Unary : public Expression {
+class Unary : public SpecificExpression<Expression::UnaryId> {
 public:
-  Unary() : Expression(UnaryId) {}
+  Unary(MixedArena& allocator) {}
 
   UnaryOp op;
   Expression *value;
@@ -989,9 +990,9 @@ public:
   // no finalize since some opcodes have more than one type, so user must set it anyhow
 };
 
-class Binary : public Expression {
+class Binary : public SpecificExpression<Expression::BinaryId> {
 public:
-  Binary() : Expression(BinaryId) {}
+  Binary(MixedArena& allocator) {}
 
   BinaryOp op;
   Expression *left, *right;
@@ -1011,9 +1012,9 @@ public:
   }
 };
 
-class Select : public Expression {
+class Select : public SpecificExpression<Expression::SelectId> {
 public:
-  Select() : Expression(SelectId) {}
+  Select(MixedArena& allocator) {}
 
   Expression *ifTrue, *ifFalse, *condition;
 
@@ -1022,18 +1023,18 @@ public:
   }
 };
 
-class Return : public Expression {
+class Return : public SpecificExpression<Expression::ReturnId> {
 public:
-  Expression *value;
-
-  Return() : Expression(ReturnId), value(nullptr) {
+  Return(MixedArena& allocator) : value(nullptr) {
     type = unreachable;
   }
+
+  Expression *value;
 };
 
-class Host : public Expression {
+class Host : public SpecificExpression<Expression::HostId> {
 public:
-  Host() : Expression(HostId) {}
+  Host(MixedArena& allocator) : operands(allocator) {}
 
   HostOp op;
   Name nameOperand;
@@ -1054,9 +1055,9 @@ public:
   }
 };
 
-class Unreachable : public Expression {
+class Unreachable : public SpecificExpression<Expression::UnreachableId> {
 public:
-  Unreachable() : Expression(UnreachableId) {
+  Unreachable(MixedArena& allocator) {
     type = unreachable;
   }
 };
@@ -1076,7 +1077,7 @@ public:
   std::vector<Name> localNames;
   std::map<Name, Index> localIndices;
 
-  Function() : result(none) {}
+  Function(MixedArena& allocator) : result(none) {}
 
   size_t getNumParams() {
     return params.size();
@@ -1126,14 +1127,16 @@ public:
 
 class Import {
 public:
+  Import(MixedArena& allocator) : type(nullptr) {}
+
   Name name, module, base; // name = module.base
   FunctionType* type;
-
-  Import() : type(nullptr) {}
 };
 
 class Export {
 public:
+  Export(MixedArena& allocator) {}
+
   Name name;  // exported name
   Name value; // internal name
 };
